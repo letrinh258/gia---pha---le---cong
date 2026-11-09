@@ -673,11 +673,13 @@ function openManage(uid){
    <button class="btn btn-ghost btn-sm" id="mgRoleBtn">Lưu quyền</button>
    <div class="field"><label for="mgPass">Cấp lại mật khẩu (khi thành viên quên)</label><input class="input" id="mgPass" placeholder="Mật khẩu mới, tối thiểu 6 ký tự"></div>
    <button class="btn btn-ghost btn-sm" id="mgPassBtn">Đặt mật khẩu mới</button>
-   ${u.status==='rejected'?`<button class="btn btn-red btn-sm" id="mgActivate">Duyệt lại tài khoản này</button>`:''}`}`);
+   ${u.status==='rejected'?`<button class="btn btn-red btn-sm" id="mgActivate">Duyệt lại tài khoản này</button>`:`<button class="link" id="mgLock" style="color:var(--muted)">Khóa tài khoản này</button><div id="lockBox" hidden class="note">Khóa tài khoản ${esc(u.name)}? Người này sẽ bị đăng xuất và không vào được app. Mở lại được bất cứ lúc nào.<div class="req-act" style="margin-top:8px"><button class="btn btn-sm btn-ghost" id="lockNo">Không khóa</button><button class="btn btn-sm btn-red" id="lockYes">Khóa</button></div></div>`}`}`);
   $('#mgLink').onclick=e=>busy(e.currentTarget,async()=>{try{await rpc('link_user',{p_token:S.token,p_user:u.id,p_person:$('#mgPerson').value||null});closeSheet();toast('Đã lưu');refresh()}catch(x){toast(x.message)}});
   if(!self){
     $('#mgRoleBtn').onclick=e=>busy(e.currentTarget,async()=>{try{await rpc('set_role',{p_token:S.token,p_user:u.id,p_role:$('input[name="mgRole"]:checked').value});closeSheet();toast('Đã đổi quyền');refresh()}catch(x){toast(x.message)}});
     $('#mgPassBtn').onclick=e=>busy(e.currentTarget,async()=>{try{await rpc('reset_password',{p_token:S.token,p_user:u.id,p_new:$('#mgPass').value});closeSheet();toast('Đã đặt mật khẩu mới. Báo lại cho thành viên.')}catch(x){toast(x.message)}});
+    const lk=$('#mgLock');if(lk){lk.onclick=()=>{$('#lockBox').hidden=false;lk.hidden=true};$('#lockNo').onclick=()=>{$('#lockBox').hidden=true;lk.hidden=false};
+      $('#lockYes').onclick=e=>busy(e.currentTarget,async()=>{try{await rpc('decide_user',{p_token:S.token,p_id:u.id,p_ok:false,p_person:null});closeSheet();toast('Đã khóa tài khoản');refresh()}catch(x){toast(x.message)}})}
     const ac=$('#mgActivate');if(ac)ac.onclick=e=>busy(e.currentTarget,async()=>{try{await rpc('decide_user',{p_token:S.token,p_id:u.id,p_ok:true,p_person:null});closeSheet();toast('Đã duyệt');refresh()}catch(x){toast(x.message)}});
   }
 }
