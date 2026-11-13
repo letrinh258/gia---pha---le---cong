@@ -699,6 +699,8 @@ function vMe(){
     ${sw('stBd',PREFS.bd,'Sinh nhật','Người còn sống, theo dương lịch')}
   </div>
   <div class="note">Chuông góc trên hiện số sinh nhật, ngày giỗ trong 7 ngày tới. Để mở app nhanh như ứng dụng: trên điện thoại, mở menu trình duyệt, chọn <b>Thêm vào màn hình chính</b>.</div>
+  <div class="sec-h"><h3>Thông báo trên điện thoại</h3></div>
+  <div class="panel" id="pushBox" style="box-shadow:none"><div class="muted" style="font-size:14px">Đang kiểm tra…</div></div>
   <div class="sec-h"><h3>Đổi mật khẩu</h3></div>
   <form class="panel" id="fPass" novalidate style="box-shadow:none">
     <input type="text" autocomplete="username" value="${esc(u.phone)}" hidden>
@@ -741,6 +743,48 @@ function bindView(){
   on('#stBd','change',e=>{PREFS.bd=e.target.checked;ls.set(PREF_KEY,JSON.stringify(PREFS))});
   document.querySelectorAll('[data-theme-set]').forEach(b=>b.onclick=()=>{const t=b.dataset.themeSet;if(t)document.documentElement.dataset.theme=t;else delete document.documentElement.dataset.theme;ls.set(THEME_KEY,t);renderView()});
   on('#logout','click',async()=>{try{await rpc('logout',{p_token:S.token})}catch(e){}forceLogout()});
+  if($('#pushBox'))renderPushBox();
+}
+
+/* ================= Thông báo đẩy ================= */
+const VAPID_PUB='BIhIsZQl1ZpJwmZOZQ2XLNgATM7zyM9xiuHE2GVWq4ggecGwry5igATMOcA8ccr7ajhycp49PECnhd6m1_0j15o';
+const isIOS=()=>/iphone|ipad|ipod/i.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+const isStandalone=()=>{try{return window.matchMedia('(display-mode: standalone)').matches||navigator.standalone===true}catch(e){return false}};
+const pushSupported=()=>('serviceWorker' in navigator)&&('PushManager' in window)&&('Notification' in window);
+const keyBytes=s=>{const p='='.repeat((4-s.length%4)%4),b=atob((s+p).replace(/-/g,'+').replace(/_/g,'/'));return Uint8Array.from(b,c=>c.charCodeAt(0))};
+const swReady=()=>Promise.race([navigator.serviceWorker.ready,new Promise(r=>setTimeout(()=>r(null),5000))]);
+const swRow=(id,on,t,s)=>`<label class="setting" for="${id}"><div><b>${t}</b><span>${s}</span></div><span class="sw"><input type="checkbox" id="${id}" ${on?'checked':''}><i></i></span></label>`;
+async function savePush(sub,g,b){const j=sub.toJSON();await rpc('push_subscribe',{p_token:S.token,p_endpoint:j.endpoint,p_p256dh:j.keys.p256dh,p_auth:j.keys.auth,p_gio:g,p_bd:b,p_ua:navigator.userAgent})}
+async function renderPushBox(){
+  const say=h=>{const b=$('#pushBox');if(b)b.innerHTML=h};
+  if(!pushSupported()){
+    say(isIOS()&&!isStandalone()
+      ?`<div class="note">Trên iPhone, hãy <b>Thêm vào MH chính</b> (nút Chia sẻ trong Safari), mở app từ biểu tượng mới trên màn hình chính, rồi quay lại đây để bật. Cần iOS 16.4 trở lên.</div>`
+      :`<div class="note">Trình duyệt này chưa hỗ trợ thông báo đẩy. Android dùng Chrome. iPhone dùng app đã thêm vào màn hình chính (iOS 16.4 trở lên).</div>`);return}
+  if(Notification.permission==='denied'){say(`<div class="note">Thông báo đang bị chặn. Mở cài đặt của điện thoại hoặc trình duyệt, cho phép thông báo cho trang này, rồi quay lại đây.</div>`);return}
+  const reg=await swReady();
+  if(!reg){say(`<div class="note">Chưa sẵn sàng. Tải lại trang rồi thử lại.</div>`);return}
+  const sub=await reg.pushManager.getSubscription();
+  let st=null;if(sub){try{st=await rpc('push_status',{p_token:S.token,p_endpoint:sub.endpoint})}catch(e){}}
+  if(sub&&st&&st.subscribed){
+    say(`<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span class="pill ok">Đang bật</span><span class="muted" style="font-size:13px">Nhắc lúc 7 giờ sáng, trước 1 ngày</span></div>
+     <div class="list">${swRow('pushGio',st.gio,'Ngày giỗ','Nhắc trước 1 ngày, theo âm lịch')}${swRow('pushBd',st.bd,'Sinh nhật','Nhắc trước 1 ngày, theo dương lịch')}</div>
+     <div class="row2"><button class="btn btn-ghost btn-sm" id="pushTest">Gửi thử</button><button class="btn btn-ghost btn-sm" id="pushOff">Tắt thông báo</button></div>`);
+    const upd=async()=>{try{await savePush(sub,$('#pushGio').checked,$('#pushBd').checked);toast('Đã lưu')}catch(x){toast(x.message)}};
+    $('#pushGio').onchange=upd;$('#pushBd').onchange=upd;
+    $('#pushTest').onclick=e=>busy(e.currentTarget,async()=>{
+      try{const r=await fetch(`${SB_URL}/functions/v1/daily-reminders`,{method:'POST',headers:{'Content-Type':'application/json','apikey':SB_KEY},body:JSON.stringify({action:'test',token:S.token})});const j=await r.json();
+        toast(j.sent>0?'Đã gửi thử. Thông báo sẽ hiện trong vài giây.':'Chưa gửi được: '+(j.error||'thiết bị chưa đăng ký hợp lệ'))}
+      catch(x){toast('Không kết nối được máy chủ')}});
+    $('#pushOff').onclick=e=>busy(e.currentTarget,async()=>{try{await rpc('push_unsubscribe',{p_token:S.token,p_endpoint:sub.endpoint});await sub.unsubscribe();toast('Đã tắt thông báo');renderPushBox()}catch(x){toast(x.message)}});
+  }else{
+    say(`<div class="muted" style="font-size:14px">Nhận thông báo ngay trên điện thoại, kể cả khi không mở app: trước 1 ngày có giỗ hoặc sinh nhật, lúc 7 giờ sáng.</div><button class="btn btn-red btn-block" id="pushOn">Bật thông báo trên điện thoại</button>`);
+    $('#pushOn').onclick=e=>busy(e.currentTarget,async()=>{
+      try{const perm=await Notification.requestPermission();if(perm!=='granted'){toast('Bạn chưa cho phép thông báo');renderPushBox();return}
+        let s=await reg.pushManager.getSubscription();if(!s)s=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:keyBytes(VAPID_PUB)});
+        await savePush(s,true,true);toast('Đã bật thông báo');renderPushBox()}
+      catch(x){toast('Không bật được: '+x.message)}});
+  }
 }
 
 /* ================= Sheet ================= */
